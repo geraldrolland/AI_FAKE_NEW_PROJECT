@@ -21,6 +21,7 @@ origins = [
     "http://localhost:8000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    'http://localhost:3000',
 
 ]
 
@@ -43,8 +44,16 @@ def paste_link(url: str = Form(..., pattern=r'^(https?://)?[^\s/$.?#].[^\s]*$'))
     try:
         results = ai_model.CS(url)
     except ValueError as e:
+        print(f"Error processing URL")
         return JSONResponse(status_code=400, content={"error": "invalid url provided"})
     return JSONResponse(content={"message": "Link received", "url": url, "results": results})
+
+@app.get('/test')
+def test():
+    """
+    Test endpoint to check if the server is running.
+    """
+    return JSONResponse(content={"message": "Server is running!"})
 
 @app.on_event("startup")
 def startup_event():
@@ -55,8 +64,10 @@ def startup_event():
     nltk.download('stopwords')
     nltk.download('wordnet')
     nltk.download('punkt_tab')
-    command = "python ./ai/model.py"
-    subprocess.Popen(command, shell=True)
+    command1 = "python ./ai/model.py"
+    subprocess.Popen(command1, shell=True)
+    command2 = "python ./ai/chrome_driver.py"
+    subprocess.Popen(command2, shell=True)
     """
     Startup event to initialize resources.
     """
