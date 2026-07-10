@@ -1,28 +1,30 @@
-﻿# AI Fake News Detection Backend
+﻿# AI Fake News Detection Project
 
-## Overview
-This repository contains a prototype backend for analyzing news content from one or more URLs and predicting whether the extracted headlines look trustworthy or likely fake. The system uses a FastAPI service, a trained Keras/TensorFlow model, Selenium for web scraping, and NLTK for text preprocessing.
+## Solution Overview
+AI Fake News Project is a prototype solution for analyzing a webpage URL and predicting whether the extracted headlines look trustworthy or likely fake. The solution combines a FastAPI backend, a trained Keras/TensorFlow model, Selenium-based webpage scraping, and NLP preprocessing to provide a lightweight AI-powered fake-news detection workflow.
 
-The current implementation focuses on extracting headlines from web pages, filtering them for cyber-security-related content, and classifying each headline as Real or Fake.
+## What the Solution Does
+The system accepts a URL, opens the page in a headless browser, extracts headlines, filters them using cyber-security related keywords, preprocesses the text, and sends the cleaned headlines to a trained model for classification.
 
-## Project Purpose
-The goal of the project is to demonstrate a lightweight AI-powered pipeline for:
-- receiving a URL from a client
-- opening the page with a headless browser
-- scraping page headlines
-- cleaning and tokenizing the text
-- running the trained model for classification
-- returning the prediction results through an API
+## Core Workflow
+1. A user submits a URL through the API.
+2. The backend receives the request and starts the AI analysis pipeline.
+3. A headless browser loads the target page and collects headlines from heading tags.
+4. The text is cleaned and converted into a format suitable for the model.
+5. The trained model predicts whether each headline is more likely Real or Fake.
+6. The results are returned as JSON through the API.
 
-## Repository Structure
-- [backend/main.py](backend/main.py) - FastAPI application and API endpoints
-- [backend/requirements.txt](backend/requirements.txt) - Python dependencies for the backend service
-- [backend/ai](backend/ai) - AI pipeline, model assets, and scraping logic
-  - [backend/ai/ai_model.py](backend/ai/ai_model.py) - main classification workflow
-  - [backend/ai/model.py](backend/ai/model.py) - loads the trained Keras model
-  - [backend/ai/chrome_driver.py](backend/ai/chrome_driver.py) - initializes Selenium ChromeDriver in headless mode
-  - [backend/ai/tokenizer.pkl](backend/ai/tokenizer.pkl) - serialized text tokenizer used by the model
-  - [backend/ai/CS_model.h5](backend/ai/CS_model.h5) and [backend/ai/CS_model.keras](backend/ai/CS_model.keras) - trained model artifacts
+## Main Features
+- URL-based analysis through a REST API
+- Headless web scraping with Selenium
+- NLP preprocessing using NLTK
+- Model-based classification with TensorFlow/Keras
+- JSON response containing the analyzed headlines and predictions
+
+## Project Structure
+- [backend/main.py](backend/main.py) - FastAPI application and API routes
+- [backend/requirements.txt](backend/requirements.txt) - Python dependencies
+- [backend/ai](backend/ai) - AI pipeline, model files, and scraping logic
 
 ## Tech Stack
 - Python 3.10+
@@ -33,20 +35,8 @@ The goal of the project is to demonstrate a lightweight AI-powered pipeline for:
 - BeautifulSoup4
 - NLTK
 - scikit-learn
-- pickle for model artifacts
-
-## How the Backend Works
-1. A client sends a URL to the API endpoint.
-2. The FastAPI server receives the request and calls the AI pipeline.
-3. The scraper opens the page with a headless Chrome instance.
-4. Headlines are extracted from page headings such as h1-h6.
-5. Only headlines matching a cyber-security keyword list are considered.
-6. Each headline is preprocessed with NLTK and tokenized.
-7. The pre-trained model predicts whether the headline is likely real or fake.
-8. The results are returned as JSON.
 
 ## API Endpoints
-
 ### GET /test
 Checks whether the backend is running.
 
@@ -55,72 +45,27 @@ Example:
 curl http://localhost:8000/test
 ```
 
-Expected response:
-```json
-{
-  "message": "Server is running!"
-}
-```
-
 ### POST /paste-link
-Accepts a URL submitted as form data and returns the analysis result.
+Accepts a URL as form data and returns the analysis result.
 
 Example:
 ```bash
 curl -X POST "http://localhost:8000/paste-link" -F "url=https://example.com"
 ```
 
-Expected response structure:
-```json
-{
-  "message": "Link received",
-  "url": "https://example.com",
-  "results": [
-    {
-      "headline": "Example headline",
-      "trusted": "Real"
-    }
-  ]
-}
-```
-
-## Setup Instructions
-
-### 1. Create a virtual environment
-```bash
-python -m venv .venv
-.venv\\Scripts\\Activate.ps1
-```
-
-### 2. Install dependencies
-From the project root:
-```bash
-pip install -r backend/requirements.txt
-pip install -r backend/ai/requirements.txt
-```
-
-### 3. Install NLTK resources
-The application attempts to download the required NLTK datasets at startup. If needed, you can also install them manually:
-```bash
-python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab')"
-```
-
-### 4. Run the backend
-From the backend folder:
-```bash
-cd backend
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+## Setup
+1. Create and activate a virtual environment.
+2. Install the required dependencies:
+   ```bash
+   pip install -r backend/requirements.txt
+   pip install -r backend/ai/requirements.txt
+   ```
+3. Run the backend:
+   ```bash
+   cd backend
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
 ## Notes
-- The project currently depends on a local Chrome browser and ChromeDriver being available through Selenium.
-- The startup process launches the model and browser setup scripts automatically.
-- The implementation is still a prototype and may need tuning for accuracy and robustness on real-world websites.
-- Some parts of the code use the term “Cyber Security Analysis” even though the project is framed as fake-news detection; this reflects the current model and keyword filtering logic.
-
-## Suggested Next Improvements
-- add a frontend interface for submitting URLs
-- support multiple news sources and better scraping logic
-- add a more general fake-news model with richer training data
-- improve error handling for unsupported or inaccessible websites
-- containerize the app with Docker for easier setup
+- The current prototype focuses on headline-based analysis and uses a locally available Chrome browser and ChromeDriver.
+- The solution is intended as a demonstration of an AI-assisted fake-news detection pipeline and can be improved with richer datasets and more robust scraping logic.
