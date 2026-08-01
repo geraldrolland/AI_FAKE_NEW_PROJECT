@@ -1,0 +1,64 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    image: ai-fake-news-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/entry_point.sh"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_RESULT_URL: redis://redis:6379/1
+    volumes:
+      - pip-cache:/root/.cache/pip
+      - selenium-cache:/root/.cache/selenium
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ai-fake-news-backend
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/entry_point.sh"]
+    command: ["celery", "-A", "app.celery_app", "worker", "--pool=solo", "--loglevel=info"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_RESULT_URL: redis://redis:6379/1
+    volumes:
+      - pip-cache:/root/.cache/pip
+      - selenium-cache:/root/.cache/selenium
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/entry_point.sh"]
+    command: ["npm", "run", "start"]
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    volumes:
+      - npm-cache:/root/.npm
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pip-cache:
+  selenium-cache:
+  npm-cache:
