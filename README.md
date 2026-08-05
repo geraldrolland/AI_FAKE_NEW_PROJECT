@@ -15,6 +15,9 @@ to the client.
 
 - **Async analysis pipeline** — `POST /api/analyze` returns immediately with a
   `task_id`; the heavy work (scraping + inference) runs in a Celery worker.
+- **7-minute result cache** — every completed analysis is stored in Redis keyed
+  by the submitted URL (`url_cache:{url}`, TTL 420 s), so re-pasting the same
+  link returns instantly without re-scraping or re-running the model.
 - **Live progress streaming** — WebSocket endpoint pushes stage updates
   (`scraping` → `analyzing` → `done`) plus the final per-headline verdicts.
 - **Real browser scraping** — headless Chrome (Selenium) renders JS-heavy sites
@@ -23,6 +26,9 @@ to the client.
   WELFake (72K+ labeled articles), ~91% balanced accuracy.
 - **Optional cyber-security filtering** — restrict analysis to security-related
   headlines via `ENABLE_KEYWORD_FILTER=true`.
+- **Animated landing page** — Next.js landing page (Framer Motion: staggered
+  hero, floating gradient orbs, scroll reveals, animated counters) at `/`, with
+  the analyzer at `/analyze`.
 - **Dockerized** — full stack (Redis + API + worker + frontend) runs with one
   command; heavy dependencies install at container startup, not at build time.
 - **Single-browser worker** — one reused Chrome driver (thread-safe, auto-healed)
@@ -63,10 +69,12 @@ Flow:
 1. The client submits a URL.
 2. FastAPI validates it and enqueues a Celery task, returning
    `202 {task_id, status: "queued", url}`.
-3. The worker publishes stage events to Redis pub/sub
-   (`analyze:{task_id}`) and scrapes the page with headless Chrome.
+3. The worker first checks the URL-keyed Redis cache; on a hit it replays the
+   stored result instantly. On a miss it publishes stage events to Redis
+   pub/sub (`analyze:{task_id}`) and scrapes the page with headless Chrome.
 4. Headlines are extracted, preprocessed, and classified by the BiLSTM model.
-5. The client receives the events over WebSocket and renders the result.
+5. The result is stored in the cache (7-minute TTL) and the client receives
+   the events over WebSocket and renders the result.
 
 > The API process never touches Chrome or the model — it only enqueues tasks
 > and relays Redis events. That keeps it fast and horizontally scalable.
@@ -80,7 +88,7 @@ Flow:
 | Backend    | Python 3.12, FastAPI, Uvicorn, Celery 5.6, Redis 8 |
 | ML         | TensorFlow / Keras (Embedding + BiLSTM), NLTK, scikit-learn |
 | Scraping   | Selenium 4, headless Chrome, BeautifulSoup4 |
-| Frontend   | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
+| Frontend   | Next.js 16 (App Router), React 19, Tailwind CSS 4, Framer Motion |
 | Tooling    | Docker + Docker Compose, pytest, pnpm-free npm |
 
 ---
@@ -93,15 +101,15 @@ Flow:
 │   │   ├── main.py         # FastAPI entrypoint, CORS, lifespan (NLTK download)
 │   │   ├── config.py       # pydantic-settings configuration
 │   │   ├── celery_app.py   # Celery instance (broker/result wiring)
-│   │   ├── tasks.py        # analyze_url task (scrape → classify → publish)
+│   │   ├── tasks.py        # analyze_url task (cache → scrape → classify → publish)
 │   │   ├── routers/        # REST + WebSocket endpoints
-│   │   └── services/       # scraper, preprocess, classifier, events, stream
+│   │   └── services/       # scraper, preprocess, classifier, cache, events, stream
 │   ├── tests/              # pytest suite (API + task event flow)
 │   ├── requirements.txt
 │   ├── Dockerfile          # lean image; deps installed by entry_point.sh
-│   └── entry_point.sh      # runtime install + server start
+│   └── entry_point.sh      # runtime install (Chromium, NLTK data) + server start
 ├── frontend/            # Next.js 16 UI
-│   ├── app/               # pages, layout
+│   ├── app/               # app/page.tsx landing page, app/analyze/ analyzer
 │   ├── lib/api.ts         # API client + WebSocket helper
 │   ├── Dockerfile
 │   └── entry_point.sh
@@ -136,7 +144,8 @@ docker compose up -d --build
 
 | Service  | URL |
 |----------|-----|
-| Frontend | http://localhost:3000 |
+| Frontend (landing page) | http://localhost:3000 |
+| Analyzer | http://localhost:3000/analyze |
 | Backend API | http://localhost:8000 |
 | API docs | http://localhost:8000/docs |
 
@@ -151,6 +160,9 @@ docker compose up -d --build
 - Redis is internal-only (not published to the host) — it won't clash with a
   local Redis on port 6379.
 - The Celery worker runs `--pool=solo`: one process, one model, one browser.
+- The backend `entry_point.sh` also downloads the NLTK corpora (punkt,
+  punkt_tab, stopwords, wordnet) for both the API and the worker, so the
+  worker can tokenize and lemmatize without NLTK lookups failing.
 
 **Overrides** — create a `.env` next to `docker-compose.yml`:
 
@@ -231,6 +243,8 @@ and `.env.example`).
 | `REDIS_URL` | `redis://localhost:6379/0` | Celery broker |
 | `REDIS_RESULT_URL` | `redis://localhost:6379/1` | Celery result backend |
 | `WS_IDLE_TIMEOUT` | `30` | WebSocket heartbeat idle seconds |
+| `CACHE_ENABLED` | `true` | Enable the URL-keyed Redis result cache |
+| `CACHE_TTL_SECONDS` | `420` | How long a cached analysis lives (7 minutes) |
 | `REDIS_HEALTH_CHECK_INTERVAL` | `25` | Redis client health pings (stale-connection guard) |
 | `REDIS_SOCKET_TIMEOUT` | `10` | Redis socket timeout |
 | `REDIS_SOCKET_CONNECT_TIMEOUT` | `5` | Redis connect timeout |
@@ -362,11 +376,12 @@ training run takes a few minutes.
 .\.venv\Scripts\python.exe -m pytest backend\tests
 ```
 
-The suite (~20 tests) covers:
+The suite (~22 tests) covers:
 
 - API contract: enqueue `202`, status polling, validation errors.
 - WebSocket streaming: stage/result/error events, terminal-event replay.
-- Task logic: event publication sequence, keyword-filter behavior.
+- Task logic: event publication sequence, keyword-filter behavior, and the
+  URL-keyed cache (hit → no scraping; miss → result stored with TTL).
 - Preprocessing and classifier unit tests.
 
 ---
@@ -378,7 +393,8 @@ The suite (~20 tests) covers:
   receive/succeed/fail with duration).
 - **First request latency**: the model and Chrome driver load lazily in the
   worker on the first analysis; expect 60–120 s for the first run, then a few
-  seconds per subsequent request.
+  seconds per subsequent request. Re-analyzing the same URL within 7 minutes
+  is served straight from the Redis cache (near-instant).
 - **Memory**: the worker holds one Keras model and one Chrome process
   (`--pool=solo`). Restart the worker if Chrome processes accumulate.
 
@@ -394,6 +410,7 @@ The suite (~20 tests) covers:
 | Empty results for a URL | The page has no `h1`–`h6` headlines, or they don't match keywords with `ENABLE_KEYWORD_FILTER=true`. Disable the filter or use another URL. |
 | First analysis very slow | Model + browser warm-up in the worker (lazy loading). Expected; subsequent runs are fast. |
 | `chromium` missing inside container | The backend `entry_point.sh` installs it on first start; check `docker compose logs backend` if it fails (apt may need retrying on flaky networks). |
+| Task fails with NLTK `Resource punkt_tab not found` | NLTK data is downloaded by `entry_point.sh` in both containers. Recreate the containers (`docker compose up -d --build backend worker`); if the zip was downloaded but not extracted, delete `/root/nltk_data` inside the container and restart. |
 | Frontend can't reach the API | `NEXT_PUBLIC_API_URL` was baked with the wrong host/port — it must be set before the frontend's first build (see Docker overrides above). |
 
 ---

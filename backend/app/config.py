@@ -8,7 +8,9 @@ MODELS_DIR = REPO_ROOT / "models"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(REPO_ROOT / ".env"), env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=str(REPO_ROOT / ".env"), env_file_encoding="utf-8", extra="ignore"
+    )
 
     model_path: Path = MODELS_DIR / "CS_model.keras"
     tokenizer_path: Path = MODELS_DIR / "tokenizer.pkl"
@@ -30,6 +32,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_result_url: str = "redis://localhost:6379/1"
     ws_idle_timeout: int = 30
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 420
     redis_health_check_interval: int = 25
     redis_socket_timeout: int = 10
     redis_socket_connect_timeout: int = 5

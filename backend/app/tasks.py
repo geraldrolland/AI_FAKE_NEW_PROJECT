@@ -4,12 +4,26 @@ from celery import Task
 from .celery_app import celery_app
 from .config import settings
 from .schemas import AnalyzeResponse, HeadlineResult
-from .services import classifier, events, preprocess, scraper
+from .services import cache, classifier, events, preprocess, scraper
 
 
 def analyze(url: str, task_id: str) -> dict:
     """Run the analysis pipeline and publish progress events."""
     events.publish(task_id, {"type": "status", "stage": "scraping"})
+
+    cached = cache.cache_get(url)
+    if cached is not None:
+        events.publish(
+            task_id, {"type": "status", "stage": "analyzing", "total": cached["total"]}
+        )
+        events.publish(
+            task_id,
+            {"type": "status", "stage": "done", "total": cached["total"],
+             "real": cached["real"], "fake": cached["fake"]},
+        )
+        events.publish(task_id, {"type": "result", "result": cached})
+        return cached
+
     html = scraper.fetch_page(url)
 
     headlines = preprocess.extract_headlines(html)
@@ -39,6 +53,7 @@ def analyze(url: str, task_id: str) -> dict:
         {"type": "status", "stage": "done", "total": payload["total"],
          "real": payload["real"], "fake": payload["fake"]},
     )
+    cache.cache_set(url, payload)
     events.publish(task_id, {"type": "result", "result": payload})
     return payload
 
